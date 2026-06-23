@@ -1,9 +1,3 @@
-# ==========================================
-# AI in Medicine Project
-# Heart Disease Classification
-# Python >= 3.11
-# ==========================================
-
 numpy>=2.2.0
 pandas>=2.3.0
 scipy>=1.16.0
