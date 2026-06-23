@@ -1,0 +1,51 @@
+{
+  "raw_features": [
+    "age",
+    "sex",
+    "cp",
+    "trestbps",
+    "chol",
+    "fbs",
+    "restecg",
+    "thalach",
+    "exang",
+    "oldpeak",
+    "slope",
+    "ca",
+    "thal"
+  ],
+  "engineered_features": [
+    "age",
+    "sex",
+    "cp",
+    "trestbps",
+    "chol",
+    "fbs",
+    "restecg",
+    "thalach",
+    "exang",
+    "oldpeak",
+    "slope",
+    "ca",
+    "thal",
+    "age_x_thalach",
+    "age_x_oldpeak",
+    "trestbps_x_chol",
+    "cp_x_thal",
+    "exang_x_oldpeak",
+    "framingham_proxy"
+  ],
+  "n_raw_features": 13,
+  "n_engineered_features": 19,
+  "shifted_features_from_eda": [
+    "chol",
+    "restecg",
+    "thalach",
+    "age",
+    "target_original",
+    "oldpeak",
+    "cp",
+    "slope"
+  ],
+  "framingham_proxy_note": "This is a Framingham-inspired proxy, not the true Framingham Risk Score, because HDL, smoking, and blood-pressure medication status are unavailable."
+}
