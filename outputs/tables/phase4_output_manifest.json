@@ -1,0 +1,22 @@
+{
+  "external_metrics": "/Users/aexomir/Desktop/AIMed/outputs/tables/phase4_external_metrics.csv",
+  "delong_results": "/Users/aexomir/Desktop/AIMed/outputs/tables/phase4_delong_results.csv",
+  "calibration_metrics": "/Users/aexomir/Desktop/AIMed/outputs/tables/phase4_calibration_metrics.csv",
+  "domain_adaptation_ablation": "/Users/aexomir/Desktop/AIMed/outputs/tables/phase4_domain_adaptation_ablation.csv",
+  "domain_adaptation_delta": "/Users/aexomir/Desktop/AIMed/outputs/tables/phase4_domain_adaptation_delta.csv",
+  "shap_feature_importance": "/Users/aexomir/Desktop/AIMed/outputs/tables/phase4_shap_feature_importance.csv",
+  "reliability_diagrams": [
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_reliability_hungarian_logistic_regression.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_reliability_hungarian_xgboost_plus_optuna.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_reliability_hungarian_small_mlp.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_reliability_swiss_logistic_regression.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_reliability_swiss_xgboost_plus_optuna.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_reliability_swiss_small_mlp.png"
+  ],
+  "external_curves": [
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_roc_curves_hungarian.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_pr_curves_hungarian.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_roc_curves_swiss.png",
+    "/Users/aexomir/Desktop/AIMed/outputs/figures/phase4_pr_curves_swiss.png"
+  ]
+}
