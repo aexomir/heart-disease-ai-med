@@ -16,3 +16,4 @@ tqdm>=4.67.1
 requests>=2.32.0
 ucimlrepo>=0.0.7
 joblib>=1.5.1
+torch>=2.5.0
