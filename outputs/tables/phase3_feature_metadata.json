@@ -1,4 +1,6 @@
 {
+  "raw_feature_count": 13,
+  "engineered_feature_count": 19,
   "raw_features": [
     "age",
     "sex",
@@ -35,17 +37,6 @@
     "exang_x_oldpeak",
     "framingham_proxy"
   ],
-  "n_raw_features": 13,
-  "n_engineered_features": 19,
-  "shifted_features_from_eda": [
-    "chol",
-    "restecg",
-    "thalach",
-    "age",
-    "target_original",
-    "oldpeak",
-    "cp",
-    "slope"
-  ],
-  "framingham_proxy_note": "This is a Framingham-inspired proxy, not the true Framingham Risk Score, because HDL, smoking, and blood-pressure medication status are unavailable."
+  "preprocessing": "ClinicalFeatureEngineer -> SimpleImputer(median) -> StandardScaler",
+  "training_policy": "Tune/CV on Cleveland train; final fit on Cleveland train + validation; do not touch Cleveland test, Hungarian, Swiss."
 }

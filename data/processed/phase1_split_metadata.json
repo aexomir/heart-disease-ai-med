@@ -1,0 +1,49 @@
+{
+  "random_state": 42,
+  "split_strategy": "StratifiedShuffleSplit",
+  "patient_id_available": false,
+  "patient_id_note": "The processed UCI Heart Disease files do not include explicit patient IDs. Rows are therefore treated as independent patient records; source_row_index is preserved only to verify no row overlap between Cleveland partitions.",
+  "cleveland_split_ratios": {
+    "train": 0.7,
+    "validation": 0.15,
+    "test": 0.15
+  },
+  "splits": {
+    "cleveland_train": {
+      "name": "cleveland_train",
+      "n_rows": 212,
+      "n_positive": 97,
+      "n_negative": 115,
+      "positive_rate": 0.45754716981132076
+    },
+    "cleveland_validation": {
+      "name": "cleveland_validation",
+      "n_rows": 45,
+      "n_positive": 21,
+      "n_negative": 24,
+      "positive_rate": 0.4666666666666667
+    },
+    "cleveland_test": {
+      "name": "cleveland_test",
+      "n_rows": 46,
+      "n_positive": 21,
+      "n_negative": 25,
+      "positive_rate": 0.45652173913043476
+    },
+    "hungarian": {
+      "name": "hungarian",
+      "n_rows": 294,
+      "n_positive": 106,
+      "n_negative": 188,
+      "positive_rate": 0.36054421768707484
+    },
+    "swiss": {
+      "name": "swiss",
+      "n_rows": 123,
+      "n_positive": 115,
+      "n_negative": 8,
+      "positive_rate": 0.9349593495934959
+    }
+  },
+  "no_overlap_confirmed": true
+}

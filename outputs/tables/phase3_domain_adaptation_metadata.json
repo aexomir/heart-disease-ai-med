@@ -1,14 +1,6 @@
 {
-  "processed_source_shape": [
-    303,
-    19
-  ],
-  "processed_target_shape": [
-    294,
-    19
-  ],
-  "aligned_source_shape": [
-    303,
-    19
-  ]
+  "method": "CORAL covariance alignment",
+  "implemented_class": "CORALAdapter",
+  "used_during_phase3_training": false,
+  "purpose": "Phase 4 ablation only"
 }
