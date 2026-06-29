@@ -1,198 +1,92 @@
+
 """
-Phase 2 - Exploratory Data Analysis (EDA)
+Phase 2 v2 — EDA runner.
 
-AI in Medicine Project
-Heart Disease Classification
-
-Responsibilities
-----------------
-1. Load Cleveland, Hungarian, and Swiss splits using the Phase 1 data module.
-2. Check class balance, missingness, feature distributions, and correlations.
-3. Quantify cross-site distribution shift between Cleveland and external sites.
-4. Save EDA tables and figures to outputs/.
-5. Return all important tables for use in notebooks and later phases.
-
-Expected project usage
-----------------------
-Run from the project root:
-
-    python src/02_eda.py
-
-This file assumes src/01-dataset.py exists and exposes run_dataset_setup().
-Because the filename contains a hyphen, this module loads it by path.
+Reads the canonical Phase 1 v2 processed splits and saves EDA tables/figures.
+EDA is based mainly on Cleveland train to avoid using validation/test evidence for
+model-design decisions, while cross-site summaries compare train against external sites.
 """
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
-from typing import Dict, Tuple
+import importlib.util
 
-import matplotlib.pyplot as plt
-import missingno as msno
 import numpy as np
 import pandas as pd
-import seaborn as sns
+import matplotlib.pyplot as plt
 from scipy import stats
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
-OUTPUT_DIR = PROJECT_ROOT / "outputs"
-FIGURE_DIR = OUTPUT_DIR / "figures"
-TABLE_DIR = OUTPUT_DIR / "tables"
+PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
+OUTPUT_TABLE_DIR = PROJECT_ROOT / "outputs" / "tables"
+OUTPUT_FIGURE_DIR = PROJECT_ROOT / "outputs" / "figures"
 
-RANDOM_STATE = 42
-TARGET_COL = "target"
-
-
-# ---------------------------------------------------------------------
-# Paths / setup
-# ---------------------------------------------------------------------
-
-def ensure_output_dirs() -> None:
-    """Create output folders used by the EDA phase."""
-    FIGURE_DIR.mkdir(parents=True, exist_ok=True)
-    TABLE_DIR.mkdir(parents=True, exist_ok=True)
+FEATURE_COLUMNS = [
+    "age", "sex", "cp", "trestbps", "chol", "fbs", "restecg", "thalach",
+    "exang", "oldpeak", "slope", "ca", "thal",
+]
 
 
-def load_phase1_runner():
-    """
-    Load src/01-dataset.py by path.
+def ensure_phase1_outputs() -> None:
+    required = [
+        "cleveland_train.csv", "cleveland_validation.csv", "cleveland_test.csv",
+        "hungarian.csv", "swiss.csv",
+    ]
+    if all((PROCESSED_DATA_DIR / f).exists() for f in required):
+        return
 
-    The filename uses a hyphen, so it cannot be imported with a normal
-    Python import statement.
-    """
-    data_path = SRC_DIR / "01-dataset.py"
-
-    if not data_path.exists():
-        raise FileNotFoundError(
-            f"Could not find {data_path}. Make sure Phase 1 file is located at src/01-dataset.py."
-        )
-
-    spec = importlib.util.spec_from_file_location("phase1_dataset", data_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not import Phase 1 module from {data_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.run_dataset_setup
+    phase1_path = PROJECT_ROOT / "src" / "01_dataset.py"
+    spec = importlib.util.spec_from_file_location("phase1_dataset", phase1_path)
+    phase1 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(phase1)
+    phase1.run_dataset_setup_v2()
 
 
-# ---------------------------------------------------------------------
-# Data preparation helpers
-# ---------------------------------------------------------------------
-
-def standardize_target_column(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Ensure the binary label column is named 'target'.
-
-    Some Phase 1 versions may use 'num'. This function accepts either.
-    """
-    df = df.copy()
-
-    if TARGET_COL in df.columns:
-        return df
-
-    if "num" in df.columns:
-        return df.rename(columns={"num": TARGET_COL})
-
-    raise KeyError("Dataset must contain either 'target' or 'num' label column.")
-
-
-def get_feature_columns(df: pd.DataFrame) -> list[str]:
-    """Return feature columns excluding the binary target."""
-    return [col for col in df.columns if col != TARGET_COL]
-
-
-def coerce_features_to_numeric(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convert all feature columns to numeric.
-
-    UCI files may contain '?' missing values or object dtypes.
-    Converting with errors='coerce' safely turns invalid values into NaN.
-    """
-    df = standardize_target_column(df)
-    df = df.copy()
-
-    for col in get_feature_columns(df):
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df[TARGET_COL] = pd.to_numeric(df[TARGET_COL], errors="coerce").astype(int)
-    return df
-
-
-def load_clean_splits() -> Dict[str, pd.DataFrame]:
-    """Load Phase 1 datasets and convert all features to numeric."""
-    run_dataset_setup = load_phase1_runner()
-    datasets = run_dataset_setup()
-
-    splits = {
-        "Cleveland": datasets["cleveland"],
-        "Hungarian": datasets["hungarian"],
-        "Swiss": datasets["swiss"],
+def load_processed_splits():
+    ensure_phase1_outputs()
+    return {
+        "cleveland_train": pd.read_csv(PROCESSED_DATA_DIR / "cleveland_train.csv"),
+        "cleveland_validation": pd.read_csv(PROCESSED_DATA_DIR / "cleveland_validation.csv"),
+        "cleveland_test": pd.read_csv(PROCESSED_DATA_DIR / "cleveland_test.csv"),
+        "hungarian": pd.read_csv(PROCESSED_DATA_DIR / "hungarian.csv"),
+        "swiss": pd.read_csv(PROCESSED_DATA_DIR / "swiss.csv"),
     }
 
-    return {name: coerce_features_to_numeric(df) for name, df in splits.items()}
 
-
-# ---------------------------------------------------------------------
-# EDA tables
-# ---------------------------------------------------------------------
-
-def class_balance_table(splits: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Create a class balance summary for all sites."""
+def class_balance_table(splits: dict[str, pd.DataFrame]) -> pd.DataFrame:
     rows = []
-
     for name, df in splits.items():
-        counts = df[TARGET_COL].value_counts().sort_index()
-        total = len(df)
-        no_disease = int(counts.get(0, 0))
-        disease = int(counts.get(1, 0))
-
-        rows.append(
-            {
-                "site": name,
-                "n_rows": total,
-                "no_disease_count": no_disease,
-                "disease_count": disease,
-                "no_disease_rate": no_disease / total if total else np.nan,
-                "disease_rate": disease / total if total else np.nan,
-            }
-        )
-
+        counts = df["target"].value_counts().sort_index()
+        rows.append({
+            "split": name,
+            "n_rows": int(len(df)),
+            "n_negative": int(counts.get(0, 0)),
+            "n_positive": int(counts.get(1, 0)),
+            "positive_rate": float(df["target"].mean()),
+        })
     return pd.DataFrame(rows)
 
 
-def missingness_table(splits: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Create a missingness summary by site and feature."""
+def missingness_summary(splits: dict[str, pd.DataFrame]) -> pd.DataFrame:
     rows = []
+    for name, df in splits.items():
+        for col in FEATURE_COLUMNS:
+            rows.append({
+                "split": name,
+                "feature": col,
+                "missing_count": int(df[col].isna().sum()),
+                "missing_rate": float(df[col].isna().mean()),
+            })
+    return pd.DataFrame(rows)
 
-    for site, df in splits.items():
-        for col in df.columns:
-            missing_count = int(df[col].isna().sum())
-            rows.append(
-                {
-                    "site": site,
-                    "feature": col,
-                    "missing_count": missing_count,
-                    "missing_rate": missing_count / len(df) if len(df) else np.nan,
-                }
-            )
 
-    return pd.DataFrame(rows).sort_values(
-        ["missing_rate", "site", "feature"], ascending=[False, True, True]
-    )
+def is_low_cardinality(series: pd.Series, threshold: int = 10) -> bool:
+    return series.dropna().nunique() <= threshold
 
 
 def compare_feature_shift(source: pd.DataFrame, target: pd.DataFrame, feature: str) -> dict:
-    """
-    Compare one feature between Cleveland and an external site.
-
-    Continuous-looking features are compared with the KS test.
-    Discrete/binary/categorical-looking numeric features are compared with
-    Mann-Whitney U. This is an EDA screening tool, not a causal test.
-    """
     a = pd.to_numeric(source[feature], errors="coerce").dropna()
     b = pd.to_numeric(target[feature], errors="coerce").dropna()
 
@@ -206,298 +100,166 @@ def compare_feature_shift(source: pd.DataFrame, target: pd.DataFrame, feature: s
             "mean_delta": np.nan,
         }
 
-    unique_count = pd.concat([a, b]).nunique()
-
-    if unique_count <= 10:
-        test = "mannwhitneyu"
-        stat, p_value = stats.mannwhitneyu(a, b, alternative="two-sided")
+    if is_low_cardinality(pd.concat([a, b])):
+        values = sorted(set(a.unique()).union(set(b.unique())))
+        observed = np.array([
+            [(a == v).sum() for v in values],
+            [(b == v).sum() for v in values],
+        ])
+        try:
+            stat, p, _, _ = stats.chi2_contingency(observed)
+        except ValueError:
+            stat, p = np.nan, np.nan
+        test = "chi_square"
     else:
+        stat, p = stats.ks_2samp(a, b)
         test = "ks_2samp"
-        stat, p_value = stats.ks_2samp(a, b)
 
     return {
         "test": test,
-        "statistic": float(stat),
-        "p_value": float(p_value),
+        "statistic": float(stat) if pd.notna(stat) else np.nan,
+        "p_value": float(p) if pd.notna(p) else np.nan,
         "source_mean": float(a.mean()),
         "target_mean": float(b.mean()),
         "mean_delta": float(b.mean() - a.mean()),
     }
 
 
-def distribution_shift_table(splits: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Create Cleveland-vs-external distribution shift table."""
-    cleveland = splits["Cleveland"]
-    feature_cols = get_feature_columns(cleveland)
+def distribution_shift_summary(splits: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    source = splits["cleveland_train"]
     rows = []
+    for target_name in ["cleveland_validation", "cleveland_test", "hungarian", "swiss"]:
+        target = splits[target_name]
+        for feature in FEATURE_COLUMNS:
+            result = compare_feature_shift(source, target, feature)
+            rows.append({
+                "comparison": f"cleveland_train_vs_{target_name}",
+                "feature": feature,
+                **result,
+            })
 
-    for external_name in ["Hungarian", "Swiss"]:
-        external_df = splits[external_name]
-        for feature in feature_cols:
-            result = compare_feature_shift(cleveland, external_df, feature)
-            rows.append(
-                {
-                    "comparison": f"Cleveland_vs_{external_name}",
-                    "feature": feature,
-                    **result,
-                    "abs_mean_delta": abs(result["mean_delta"])
-                    if pd.notna(result["mean_delta"])
-                    else np.nan,
-                }
-            )
-
-    shift_df = pd.DataFrame(rows)
-    return shift_df.sort_values(["p_value", "abs_mean_delta"], ascending=[True, False])
+    out = pd.DataFrame(rows)
+    out["minus_log10_p"] = -np.log10(out["p_value"].replace(0, np.nextafter(0, 1)))
+    return out.sort_values(["comparison", "p_value"])
 
 
-# ---------------------------------------------------------------------
-# Figures
-# ---------------------------------------------------------------------
+def save_class_balance_plot(class_balance: pd.DataFrame) -> None:
+    fig, ax = plt.subplots(figsize=(9, 4))
+    class_balance.set_index("split")[["n_negative", "n_positive"]].plot(kind="bar", ax=ax)
+    ax.set_title("Class balance by split")
+    ax.set_xlabel("Split")
+    ax.set_ylabel("Number of patients")
+    ax.legend(["No disease", "Disease present"])
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout()
+    fig.savefig(OUTPUT_FIGURE_DIR / "class_balance.png", dpi=200)
+    plt.close(fig)
 
-def save_class_balance_plot(balance_df: pd.DataFrame) -> Path:
-    """Save class balance bar plot."""
-    plot_df = balance_df.melt(
-        id_vars="site",
-        value_vars=["no_disease_count", "disease_count"],
-        var_name="class",
-        value_name="count",
+
+def save_missingness_heatmap(splits: dict[str, pd.DataFrame]) -> None:
+    combined = pd.concat(
+        [df.assign(split=name) for name, df in splits.items()],
+        ignore_index=True,
     )
-    plot_df["class"] = plot_df["class"].map(
-        {"no_disease_count": "No disease", "disease_count": "Disease"}
-    )
-
-    plt.figure(figsize=(8, 5))
-    sns.barplot(data=plot_df, x="site", y="count", hue="class")
-    plt.title("Class Balance Across Sites")
-    plt.xlabel("Site")
-    plt.ylabel("Count")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.imshow(combined[FEATURE_COLUMNS].isna(), aspect="auto")
+    ax.set_title("Missingness matrix across all splits")
+    ax.set_xlabel("Features")
+    ax.set_ylabel("Rows")
+    ax.set_xticks(range(len(FEATURE_COLUMNS)))
+    ax.set_xticklabels(FEATURE_COLUMNS, rotation=90)
     plt.tight_layout()
-
-    path = FIGURE_DIR / "class_balance.png"
-    plt.savefig(path, dpi=300)
-    plt.close()
-    return path
+    fig.savefig(OUTPUT_FIGURE_DIR / "missingness_heatmap.png", dpi=200)
+    plt.close(fig)
 
 
-def save_missingness_heatmap(splits: Dict[str, pd.DataFrame]) -> Path:
-    """Save missingness heatmap for all sites combined."""
-    combined = []
-
-    for site, df in splits.items():
-        temp = df.copy()
-        temp["site"] = site
-        combined.append(temp)
-
-    combined_df = pd.concat(combined, axis=0, ignore_index=True)
-
-    plt.figure(figsize=(12, 6))
-    msno.matrix(combined_df, sparkline=False)
-    plt.title("Missingness Pattern Across All Sites")
-    plt.tight_layout()
-
-    path = FIGURE_DIR / "missingness_heatmap.png"
-    plt.savefig(path, dpi=300, bbox_inches="tight")
-    plt.close()
-    return path
-
-
-def save_cleveland_correlation_matrix(cleveland: pd.DataFrame) -> Path:
-    """Save Cleveland-only correlation matrix."""
-    corr = cleveland.corr(numeric_only=True)
-
-    plt.figure(figsize=(11, 9))
-    sns.heatmap(corr, annot=False, cmap="coolwarm", center=0, square=True)
-    plt.title("Cleveland Correlation Matrix")
-    plt.tight_layout()
-
-    path = FIGURE_DIR / "cleveland_correlation_matrix.png"
-    plt.savefig(path, dpi=300)
-    plt.close()
-    return path
-
-
-def save_feature_histograms(cleveland: pd.DataFrame) -> list[Path]:
-    """
-    Save Cleveland feature histograms split by binary label.
-
-    These plots are Cleveland-only because Cleveland is the training source site.
-    """
-    paths = []
-    feature_cols = get_feature_columns(cleveland)
-
-    for feature in feature_cols:
-        plt.figure(figsize=(7, 4))
-        sns.histplot(
-            data=cleveland,
-            x=feature,
-            hue=TARGET_COL,
-            kde=False,
-            bins=20,
-            element="step",
-            stat="count",
-            common_norm=False,
-        )
-        plt.title(f"Cleveland Distribution by Label: {feature}")
-        plt.xlabel(feature)
-        plt.ylabel("Count")
+def save_histograms(cleveland_train: pd.DataFrame) -> None:
+    for feature in FEATURE_COLUMNS + ["target_original"]:
+        if feature not in cleveland_train.columns:
+            continue
+        fig, ax = plt.subplots(figsize=(6, 3.5))
+        for label, label_name in [(0, "No disease"), (1, "Disease present")]:
+            values = pd.to_numeric(
+                cleveland_train.loc[cleveland_train["target"] == label, feature],
+                errors="coerce",
+            ).dropna()
+            ax.hist(values, bins=20, alpha=0.6, label=label_name)
+        ax.set_title(f"Cleveland train distribution by label: {feature}")
+        ax.set_xlabel(feature)
+        ax.set_ylabel("Count")
+        ax.legend()
         plt.tight_layout()
-
-        safe_feature = feature.replace("/", "_").replace(" ", "_")
-        path = FIGURE_DIR / f"hist_cleveland_{safe_feature}.png"
-        plt.savefig(path, dpi=300)
-        plt.close()
-        paths.append(path)
-
-    return paths
+        fig.savefig(OUTPUT_FIGURE_DIR / f"hist_cleveland_train_{feature}.png", dpi=200)
+        plt.close(fig)
 
 
-def save_shift_barplot(shift_df: pd.DataFrame, top_n: int = 10) -> Path:
-    """Save barplot of largest absolute mean deltas."""
-    plot_df = shift_df.dropna(subset=["abs_mean_delta"]).copy()
-    plot_df = plot_df.sort_values("abs_mean_delta", ascending=False).head(top_n)
-    plot_df["label"] = plot_df["comparison"] + " | " + plot_df["feature"]
-
-    plt.figure(figsize=(10, 6))
-    sns.barplot(data=plot_df, y="label", x="abs_mean_delta")
-    plt.title(f"Top {top_n} Cross-Site Feature Shifts by Absolute Mean Delta")
-    plt.xlabel("Absolute Mean Delta")
-    plt.ylabel("Comparison | Feature")
+def save_correlation_matrix(cleveland_train: pd.DataFrame) -> None:
+    cols = FEATURE_COLUMNS + ["target"]
+    corr = cleveland_train[cols].corr(numeric_only=True)
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(corr, aspect="auto")
+    ax.set_title("Cleveland train correlation matrix")
+    ax.set_xticks(range(len(corr.columns)))
+    ax.set_yticks(range(len(corr.index)))
+    ax.set_xticklabels(corr.columns, rotation=90)
+    ax.set_yticklabels(corr.index)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     plt.tight_layout()
-
-    path = FIGURE_DIR / "top_distribution_shifts.png"
-    plt.savefig(path, dpi=300)
-    plt.close()
-    return path
+    fig.savefig(OUTPUT_FIGURE_DIR / "cleveland_train_correlation_matrix.png", dpi=200)
+    plt.close(fig)
 
 
-# ---------------------------------------------------------------------
-# Interpretation helpers
-# ---------------------------------------------------------------------
-
-def summarize_eda_findings(
-    balance_df: pd.DataFrame,
-    missing_df: pd.DataFrame,
-    shift_df: pd.DataFrame,
-    top_n: int = 8,
-) -> None:
-    """Print concise EDA findings for Phase 3 decisions."""
-    print("\n" + "=" * 70)
-    print("EDA SUMMARY FOR PHASE 3")
-    print("=" * 70)
-
-    print("\nClass balance:")
-    print(balance_df.to_string(index=False))
-
-    print("\nFeatures with missing values:")
-    missing_nonzero = missing_df[missing_df["missing_count"] > 0]
-    if missing_nonzero.empty:
-        print("No missing values detected.")
-    else:
-        print(
-            missing_nonzero.head(20).to_string(
-                index=False,
-                formatters={"missing_rate": "{:.2%}".format},
-            )
-        )
-
-    print("\nStrongest cross-site shifts:")
-    cols = [
-        "comparison",
-        "feature",
-        "test",
-        "p_value",
-        "source_mean",
-        "target_mean",
-        "mean_delta",
-    ]
-    print(
-        shift_df[cols]
-        .head(top_n)
-        .to_string(
-            index=False,
-            formatters={
-                "p_value": "{:.3e}".format,
-                "source_mean": "{:.3f}".format,
-                "target_mean": "{:.3f}".format,
-                "mean_delta": "{:.3f}".format,
-            },
-        )
-    )
-
-    print("\nPhase 3 implications:")
-    print("- Use imputation in the preprocessing pipeline, fitted only on Cleveland train.")
-    print("- Keep stratified Cleveland train/validation splitting because class balance matters clinically.")
-    print("- Treat Hungarian and Swiss only as external test sites; do not refit preprocessing on them.")
-    print("- Use the strongest shifted features to motivate the domain adaptation ablation.")
+def save_shift_plot(shift: pd.DataFrame) -> None:
+    top = shift.dropna(subset=["p_value"]).sort_values("p_value").head(12).copy()
+    top["label"] = top["comparison"] + " — " + top["feature"]
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.barh(top["label"], top["minus_log10_p"])
+    ax.invert_yaxis()
+    ax.set_xlabel("-log10(p-value)")
+    ax.set_title("Top distribution shifts relative to Cleveland train")
+    plt.tight_layout()
+    fig.savefig(OUTPUT_FIGURE_DIR / "top_distribution_shifts.png", dpi=200)
+    plt.close(fig)
 
 
-# ---------------------------------------------------------------------
-# Runner
-# ---------------------------------------------------------------------
+def run_eda_v2() -> dict[str, pd.DataFrame]:
+    print("\nPhase 2 v2 — EDA")
+    print("=" * 72)
 
-def run_eda(save_outputs: bool = True) -> Dict[str, object]:
-    """
-    Run the full Phase 2 EDA pipeline.
+    OUTPUT_TABLE_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
-    Parameters
-    ----------
-    save_outputs:
-        If True, saves tables and figures to outputs/.
+    splits = load_processed_splits()
 
-    Returns
-    -------
-    Dictionary containing cleaned splits, EDA tables, and saved file paths.
-    """
-    ensure_output_dirs()
+    class_balance = class_balance_table(splits)
+    missingness = missingness_summary(splits)
+    shift = distribution_shift_summary(splits)
 
-    print("\nLoading cleaned Phase 1 splits...\n")
-    splits = load_clean_splits()
+    class_balance.to_csv(OUTPUT_TABLE_DIR / "class_balance.csv", index=False)
+    missingness.to_csv(OUTPUT_TABLE_DIR / "missingness_summary.csv", index=False)
+    shift.to_csv(OUTPUT_TABLE_DIR / "distribution_shift_summary.csv", index=False)
 
-    balance_df = class_balance_table(splits)
-    missing_df = missingness_table(splits)
-    shift_df = distribution_shift_table(splits)
+    save_class_balance_plot(class_balance)
+    save_missingness_heatmap(splits)
+    save_histograms(splits["cleveland_train"])
+    save_correlation_matrix(splits["cleveland_train"])
+    save_shift_plot(shift)
 
-    saved_paths: Dict[str, object] = {}
+    print("Saved EDA outputs:")
+    print(OUTPUT_TABLE_DIR / "class_balance.csv")
+    print(OUTPUT_TABLE_DIR / "missingness_summary.csv")
+    print(OUTPUT_TABLE_DIR / "distribution_shift_summary.csv")
+    print(OUTPUT_FIGURE_DIR)
 
-    if save_outputs:
-        balance_path = TABLE_DIR / "class_balance.csv"
-        missing_path = TABLE_DIR / "missingness_summary.csv"
-        shift_path = TABLE_DIR / "distribution_shift_summary.csv"
-
-        balance_df.to_csv(balance_path, index=False)
-        missing_df.to_csv(missing_path, index=False)
-        shift_df.to_csv(shift_path, index=False)
-
-        saved_paths["class_balance_table"] = balance_path
-        saved_paths["missingness_table"] = missing_path
-        saved_paths["distribution_shift_table"] = shift_path
-
-        saved_paths["class_balance_plot"] = save_class_balance_plot(balance_df)
-        saved_paths["missingness_heatmap"] = save_missingness_heatmap(splits)
-        saved_paths["cleveland_correlation_matrix"] = save_cleveland_correlation_matrix(
-            splits["Cleveland"]
-        )
-        saved_paths["feature_histograms"] = save_feature_histograms(splits["Cleveland"])
-        saved_paths["top_distribution_shifts"] = save_shift_barplot(shift_df)
-
-    summarize_eda_findings(balance_df, missing_df, shift_df)
-
-    if save_outputs:
-        print("\nSaved outputs:")
-        for name, path in saved_paths.items():
-            if isinstance(path, list):
-                print(f"- {name}: {len(path)} files")
-            else:
-                print(f"- {name}: {path}")
+    print("\nMost shifted features:")
+    print(shift[["comparison", "feature", "p_value", "mean_delta"]].head(10).to_string(index=False))
 
     return {
-        "splits": splits,
-        "class_balance": balance_df,
-        "missingness": missing_df,
-        "distribution_shift": shift_df,
-        "saved_paths": saved_paths,
+        "class_balance": class_balance,
+        "missingness_summary": missingness,
+        "distribution_shift_summary": shift,
     }
 
 
 if __name__ == "__main__":
-    run_eda(save_outputs=True)
+    run_eda_v2()

@@ -1,59 +1,37 @@
+
 """
-Phase 1 — Dataset Setup
-AI in Medicine Project: Heart Disease ML
+Phase 1 v2 — Dataset setup and canonical splitting.
 
-This module is the Phase 1 implementation/runner.
+Creates the single source of truth for all later phases:
+- Cleveland train: 70%
+- Cleveland validation: 15%
+- Cleveland held-out test: 15%
+- Hungarian external test
+- Swiss external test
 
-What it does
-------------
-1. Downloads the original UCI processed Heart Disease site files if missing.
-2. Stores them in data/raw/.
-3. Loads Cleveland, Hungarian, and Swiss as separate external-site datasets.
-4. Assigns the standard 14 published attributes.
-5. Converts '?' to missing values and casts columns to numeric.
-6. Collapses the original target scale into binary labels:
-   0 = no disease, 1 = disease present.
-7. Verifies column alignment across the three splits.
-8. Prints shapes, missingness, and label distributions.
-9. Creates a leakage-safe Cleveland train/validation split.
-
-Important project rule
-----------------------
-Cleveland is used for training/validation.
-Hungarian and Swiss are kept untouched as external test sets.
-No preprocessing is fitted on Hungarian or Swiss in this phase.
+No patient ID column exists in the processed UCI Heart Disease files, so this runner
+uses StratifiedShuffleSplit and documents the row-independence assumption.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict
 from urllib.request import urlretrieve
+import json
 
-import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedShuffleSplit
 
 
 RANDOM_STATE = 42
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
+PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
 
 COLUMN_NAMES = [
-    "age",
-    "sex",
-    "cp",
-    "trestbps",
-    "chol",
-    "fbs",
-    "restecg",
-    "thalach",
-    "exang",
-    "oldpeak",
-    "slope",
-    "ca",
-    "thal",
-    "target",
+    "age", "sex", "cp", "trestbps", "chol", "fbs", "restecg", "thalach",
+    "exang", "oldpeak", "slope", "ca", "thal", "target",
 ]
 
 SITE_FILES = {
@@ -73,205 +51,161 @@ SITE_FILES = {
 
 
 def ensure_raw_data(raw_data_dir: Path = RAW_DATA_DIR) -> Dict[str, Path]:
-    """
-    Download the three UCI processed files if they do not already exist locally.
-
-    Returns
-    -------
-    dict
-        Mapping from site name to local file path.
-    """
-
     raw_data_dir.mkdir(parents=True, exist_ok=True)
-    local_paths: Dict[str, Path] = {}
+    paths = {}
 
     for site, info in SITE_FILES.items():
         path = raw_data_dir / info["filename"]
-        local_paths[site] = path
-
+        paths[site] = path
         if path.exists() and path.stat().st_size > 0:
             print(f"Found local file for {site}: {path}")
-            continue
+        else:
+            print(f"Downloading {site}...")
+            urlretrieve(info["url"], path)
+            print(f"Saved: {path}")
 
-        print(f"Downloading {site} from UCI...")
-        urlretrieve(info["url"], path)
-        print(f"Saved to: {path}")
-
-    return local_paths
+    return paths
 
 
-def load_site_file(path: Path, site_name: str) -> pd.DataFrame:
-    """
-    Load one processed UCI Heart Disease file.
-    """
-
-    df = pd.read_csv(
-        path,
-        header=None,
-        names=COLUMN_NAMES,
-        na_values="?",
-    )
-
-    # All columns are numeric in the processed 14-attribute files.
+def load_site(path: Path, site: str) -> pd.DataFrame:
+    df = pd.read_csv(path, header=None, names=COLUMN_NAMES, na_values="?")
     for col in COLUMN_NAMES:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df["site"] = site_name
-
-    return df
-
-
-def binarize_target(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Collapse original UCI target encoding:
-    0 = no disease, 1-4 = disease present.
-    """
-
-    df = df.copy()
     df["target_original"] = df["target"]
     df["target"] = (df["target"] > 0).astype(int)
+    df["site"] = site
+    df["source_row_index"] = df.index.astype(int)
     return df
 
 
-def load_all_splits(raw_data_dir: Path = RAW_DATA_DIR) -> Dict[str, pd.DataFrame]:
-    """
-    Download if needed, then load Cleveland, Hungarian, and Swiss.
-    """
+def load_all_sites() -> Dict[str, pd.DataFrame]:
+    paths = ensure_raw_data()
+    return {site: load_site(path, site) for site, path in paths.items()}
 
-    paths = ensure_raw_data(raw_data_dir)
 
-    datasets = {
-        site: binarize_target(load_site_file(path, site))
-        for site, path in paths.items()
+def split_cleveland_70_15_15(cleveland: pd.DataFrame):
+    df = cleveland.copy()
+
+    splitter_1 = StratifiedShuffleSplit(
+        n_splits=1, test_size=0.30, random_state=RANDOM_STATE
+    )
+    train_idx, temp_idx = next(splitter_1.split(df, df["target"]))
+
+    train = df.iloc[train_idx].copy()
+    temp = df.iloc[temp_idx].copy()
+
+    splitter_2 = StratifiedShuffleSplit(
+        n_splits=1, test_size=0.50, random_state=RANDOM_STATE
+    )
+    val_rel_idx, test_rel_idx = next(splitter_2.split(temp, temp["target"]))
+
+    validation = temp.iloc[val_rel_idx].copy()
+    test = temp.iloc[test_rel_idx].copy()
+
+    return train, validation, test
+
+
+def assert_no_overlap(*dfs: pd.DataFrame) -> None:
+    index_sets = [set(df["source_row_index"].tolist()) for df in dfs]
+    names = ["train", "validation", "test"]
+    for i in range(len(index_sets)):
+        for j in range(i + 1, len(index_sets)):
+            overlap = index_sets[i].intersection(index_sets[j])
+            if overlap:
+                raise ValueError(f"Overlap detected between {names[i]} and {names[j]}: {overlap}")
+    print("No source row index overlap between Cleveland train/validation/test.")
+
+
+def summarize_split(name: str, df: pd.DataFrame) -> dict:
+    return {
+        "name": name,
+        "n_rows": int(len(df)),
+        "n_positive": int(df["target"].sum()),
+        "n_negative": int((df["target"] == 0).sum()),
+        "positive_rate": float(df["target"].mean()),
     }
 
-    return datasets
+
+def save_outputs(train, validation, test, hungarian, swiss) -> None:
+    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    outputs = {
+        "cleveland_train.csv": train,
+        "cleveland_validation.csv": validation,
+        "cleveland_test.csv": test,
+        "hungarian.csv": hungarian,
+        "swiss.csv": swiss,
+    }
+
+    for filename, df in outputs.items():
+        path = PROCESSED_DATA_DIR / filename
+        df.to_csv(path, index=False)
+        print(f"Saved: {path}")
+
+    metadata = {
+        "random_state": RANDOM_STATE,
+        "split_strategy": "StratifiedShuffleSplit",
+        "patient_id_available": False,
+        "patient_id_note": (
+            "The processed UCI Heart Disease files do not include explicit patient IDs. "
+            "Rows are therefore treated as independent patient records; source_row_index "
+            "is preserved only to verify no row overlap between Cleveland partitions."
+        ),
+        "cleveland_split_ratios": {"train": 0.70, "validation": 0.15, "test": 0.15},
+        "splits": {
+            "cleveland_train": summarize_split("cleveland_train", train),
+            "cleveland_validation": summarize_split("cleveland_validation", validation),
+            "cleveland_test": summarize_split("cleveland_test", test),
+            "hungarian": summarize_split("hungarian", hungarian),
+            "swiss": summarize_split("swiss", swiss),
+        },
+        "no_overlap_confirmed": True,
+    }
+
+    metadata_path = PROCESSED_DATA_DIR / "phase1_split_metadata.json"
+    metadata_path.write_text(json.dumps(metadata, indent=2))
+    print(f"Saved: {metadata_path}")
 
 
-def verify_column_alignment(datasets: Dict[str, pd.DataFrame]) -> None:
-    """
-    Verify that all sites contain the same modeling columns.
-    """
-
-    expected_model_columns = COLUMN_NAMES
-
-    for site, df in datasets.items():
-        actual_model_columns = [col for col in df.columns if col in expected_model_columns]
-        if actual_model_columns != expected_model_columns:
-            raise ValueError(
-                f"Column mismatch in {site}.\n"
-                f"Expected: {expected_model_columns}\n"
-                f"Actual:   {actual_model_columns}"
-            )
-
-    print("Column alignment check passed for Cleveland, Hungarian, and Swiss.")
-
-
-def dataset_summary(name: str, df: pd.DataFrame) -> None:
-    """
-    Print a compact clinical ML dataset summary.
-    """
-
-    label_counts = df["target"].value_counts().sort_index()
-    positive_rate = df["target"].mean()
-    missing_counts = df[COLUMN_NAMES].isna().sum()
-    missing_counts = missing_counts[missing_counts > 0]
-
-    print("\n" + "=" * 72)
-    print(name.upper())
+def run_dataset_setup_v2() -> Dict[str, pd.DataFrame]:
+    print("\nPhase 1 v2 — Dataset setup")
     print("=" * 72)
-    print(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-    print("\nBinary label distribution:")
-    print(label_counts.to_string())
-    print(f"Positive disease rate: {positive_rate:.2%}")
 
-    print("\nOriginal target values before binary collapse:")
-    print(df["target_original"].value_counts(dropna=False).sort_index().to_string())
+    sites = load_all_sites()
+    cleveland = sites["cleveland"]
+    hungarian = sites["hungarian"]
+    swiss = sites["swiss"]
 
-    print("\nMissing values in modeling columns:")
-    if missing_counts.empty:
-        print("No missing values detected.")
-    else:
-        print(missing_counts.to_string())
+    train, validation, test = split_cleveland_70_15_15(cleveland)
+    assert_no_overlap(train, validation, test)
 
+    save_outputs(train, validation, test, hungarian, swiss)
 
-def create_cleveland_train_validation_split(
-    cleveland: pd.DataFrame,
-    validation_size: float = 0.20,
-    random_state: int = RANDOM_STATE,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-    """
-    Create a stratified Cleveland train/validation split.
-
-    Hungarian and Swiss must not be used here because they are external test sets.
-    """
-
-    feature_columns = [col for col in COLUMN_NAMES if col != "target"]
-
-    X = cleveland[feature_columns].copy()
-    y = cleveland["target"].copy()
-
-    X_train, X_val, y_train, y_val = train_test_split(
-        X,
-        y,
-        test_size=validation_size,
-        stratify=y,
-        random_state=random_state,
-    )
-
-    return X_train, X_val, y_train, y_val
-
-
-def print_split_summary(y_train: pd.Series, y_val: pd.Series) -> None:
-    """
-    Print the Cleveland train/validation label balance.
-    """
-
-    print("\n" + "=" * 72)
-    print("CLEVELAND TRAIN/VALIDATION SPLIT")
+    print("\nSplit summary")
     print("=" * 72)
-    print(f"Train size: {len(y_train)}")
-    print(f"Validation size: {len(y_val)}")
-    print(f"Train positive rate: {y_train.mean():.2%}")
-    print(f"Validation positive rate: {y_val.mean():.2%}")
-
-
-def run_dataset_setup(raw_data_dir: Path = RAW_DATA_DIR) -> Dict[str, object]:
-    """
-    Full Phase 1 runner.
-
-    This function is safe to call from notebooks. It does not create processed
-    output files; it only downloads/caches raw UCI files if missing.
-    """
-
-    print("\nPhase 1 — Dataset setup")
-    print("Loading Cleveland, Hungarian, and Swiss UCI Heart Disease splits...")
-
-    datasets = load_all_splits(raw_data_dir)
-    verify_column_alignment(datasets)
-
-    for site, df in datasets.items():
-        dataset_summary(site, df)
-
-    X_train, X_val, y_train, y_val = create_cleveland_train_validation_split(
-        datasets["cleveland"]
-    )
-    print_split_summary(y_train, y_val)
-
-    print("\nLeakage rule confirmed:")
-    print("Cleveland is used for train/validation only.")
-    print("Hungarian and Swiss remain untouched external test sets for Phase 4.")
+    for name, df in {
+        "cleveland_train": train,
+        "cleveland_validation": validation,
+        "cleveland_test": test,
+        "hungarian": hungarian,
+        "swiss": swiss,
+    }.items():
+        s = summarize_split(name, df)
+        print(
+            f"{name:22s} rows={s['n_rows']:3d} "
+            f"positive_rate={s['positive_rate']:.2%} "
+            f"pos={s['n_positive']:3d} neg={s['n_negative']:3d}"
+        )
 
     return {
-        "cleveland": datasets["cleveland"],
-        "hungarian": datasets["hungarian"],
-        "swiss": datasets["swiss"],
-        "X_train": X_train,
-        "X_val": X_val,
-        "y_train": y_train,
-        "y_val": y_val,
+        "cleveland_train": train,
+        "cleveland_validation": validation,
+        "cleveland_test": test,
+        "hungarian": hungarian,
+        "swiss": swiss,
     }
 
 
 if __name__ == "__main__":
-    run_dataset_setup()
+    run_dataset_setup_v2()
