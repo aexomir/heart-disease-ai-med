@@ -34,8 +34,6 @@ The repository snapshot includes raw and processed data, four analysis notebooks
 `-- README.md
 ```
 
-Current snapshot note: this repository does not contain a `src/` package or a `reports/` directory. A few notebook cells and saved-artifact references still mention an earlier script-oriented layout such as `src/03_modeling.py`. The files actually present in this checkout are the notebooks, data, models, figures, and tables listed above.
-
 ## Quick Start
 
 Create a Python environment and install the project dependencies:
@@ -59,8 +57,6 @@ Recommended execution and reading order:
 2. `notebooks/02_eda.ipynb`
 3. `notebooks/03_modeling.ipynb`
 4. `notebooks/04_evaluation.ipynb`
-
-The committed artifacts under `outputs/` are the canonical generated outputs for this repository snapshot. Re-running the notebooks may require resolving the Phase 4 model-loading caveat described in the reproducibility notes below.
 
 ## Data
 
