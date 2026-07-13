@@ -2,34 +2,30 @@
   "logistic_regression": {
     "model__C": 0.5,
     "model__class_weight": null,
-    "model__penalty": "l1",
-    "model__solver": "liblinear"
+    "model__penalty": "l2",
+    "model__solver": "lbfgs"
   },
   "xgboost_optuna": {
-    "best_params": {
-      "n_estimators": 93,
-      "max_depth": 4,
-      "learning_rate": 0.12429497044775645,
-      "subsample": 0.709474251299767,
-      "colsample_bytree": 0.6546222785562367,
-      "min_child_weight": 6.077498591972471,
-      "gamma": 2.4113098256079746,
-      "reg_alpha": 0.032011336793843194,
-      "reg_lambda": 0.6231946242788892,
-      "scale_pos_weight": 0.7972900365412258
-    },
-    "best_auc": 0.9108640973224308,
-    "n_trials": 50
+    "n_estimators": 130,
+    "max_depth": 5,
+    "learning_rate": 0.055428876019668206,
+    "subsample": 0.6563889664944079,
+    "colsample_bytree": 0.6656827730154452,
+    "min_child_weight": 2.752191338052439,
+    "gamma": 1.8121738670705054,
+    "reg_alpha": 0.0510118888101479,
+    "reg_lambda": 0.5056277449456513,
+    "scale_pos_weight": 1.0294852262083334
   },
   "small_mlp": {
     "model__solver": "adam",
-    "model__learning_rate_init": 0.01,
+    "model__learning_rate_init": 0.0005,
     "model__hidden_layer_sizes": [
       32
     ],
     "model__batch_size": 16,
-    "model__alpha": 0.1,
-    "model__activation": "tanh"
+    "model__alpha": 0.001,
+    "model__activation": "relu"
   },
-  "best_internal_cv_model": "Logistic Regression"
+  "best_model_by_validation_auc": "Logistic Regression"
 }
